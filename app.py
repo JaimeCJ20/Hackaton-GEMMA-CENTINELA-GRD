@@ -18,7 +18,7 @@ def cargar_datos_reales():
 try:
     datos = cargar_datos_reales()
 except Exception as e:
-    st.error("⚠️ Asegúrate de haber guardado el archivo 'distritos_reales.csv'.")
+    st.error("⚠️ Asegúrate de haber guardado el archivo 'all_189.csv' en esta carpeta.")
     st.stop()
 
 # 3. Diseño del Panel
@@ -27,8 +27,6 @@ col1, col2 = st.columns(2)
 with col1:
     st.write("### Zonas Críticas (Riesgo Nacional)")
     st.dataframe(datos[['Departamento', 'Distrito', 'Nivel_Riesgo', 'Poblacion_Expuesta']])
-    
-    # Confirmación visual del total de datos
     st.success(f"✅ Total de zonas monitoreadas: {len(datos)} distritos.")
     
     st.write("### Motor de Evacuación (Gemma AI + API en Vivo)")
@@ -49,23 +47,43 @@ with col1:
         lon_centro = info['Longitud']
         zoom_mapa = 12 
         
-        # Conexión a la API del Clima
+        # Conexión a la API del Clima (Mejorada)
         url_api = f"https://api.open-meteo.com/v1/forecast?latitude={lat_centro}&longitude={lon_centro}&current_weather=true"
         
         with st.spinner("Consultando satélites meteorológicos en tiempo real..."):
             try:
                 respuesta_api = requests.get(url_api).json()
-                temp = respuesta_api['current_weather']['temperature']
-                st.info(f"🌐 API EN VIVO: Temperatura actual en {distrito_elegido}: {temp}°C")
+                clima = respuesta_api['current_weather']
+                
+                # Extrayendo la información vital
+                temp = clima['temperature']
+                viento = clima['windspeed']
+                codigo_clima = clima['weathercode']
+                
+                # Traductor de códigos meteorológicos WMO
+                if codigo_clima in [0, 1, 2, 3]: condicion = "Despejado / Nublado ☁️"
+                elif codigo_clima in [45, 48]: condicion = "Neblina 🌫️"
+                elif codigo_clima in [51, 53, 55, 61, 63, 65, 80, 81, 82]: condicion = "Lluvia 🌧️"
+                elif codigo_clima in [95, 96, 99]: condicion = "Tormenta ⛈️"
+                else: condicion = "Variable 🌥️"
+
+                # Mostrar métricas visuales en pantalla
+                st.write("#### 📡 Condiciones Climáticas (Satélite)")
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Temperatura", f"{temp} °C")
+                m2.metric("Vel. Viento", f"{viento} km/h")
+                m3.metric("Estado", condicion)
+
             except:
-                temp = "Desconocida (Error de red)"
+                temp, viento, condicion = "N/A", "N/A", "N/A"
                 st.warning("No se pudo conectar a la API del clima.")
         
         st.warning(f"⚠️ Alerta en {info['Distrito']}: Nivel de Riesgo {info['Nivel_Riesgo']}. Población expuesta: {int(info['Poblacion_Expuesta'])}.")
 
         if st.button("Generar Alerta con Gemma"):
             with st.spinner("Gemma procesando el impacto social..."):
-                prompt = f"Eres Defensa Civil. Riesgo {info['Nivel_Riesgo']} inminente en {info['Distrito']}, {info['Departamento']}. {int(info['Poblacion_Expuesta'])} personas y {int(info['Colegios_Riesgo'])} colegios en peligro. Temperatura: {temp}°C. Escribe un SMS de evacuación urgente de máximo 40 palabras."
+                # ¡Le pasamos TODO a Gemma para que razone!
+                prompt = f"Eres Defensa Civil. Riesgo {info['Nivel_Riesgo']} inminente en {info['Distrito']}, {info['Departamento']}. {int(info['Poblacion_Expuesta'])} personas y {int(info['Colegios_Riesgo'])} colegios en peligro. El clima actual es de {temp}°C, con {condicion} y vientos de {viento}km/h. Escribe un SMS de evacuación urgente y específico de máximo 40 palabras."
                 
                 respuesta = ollama.chat(model='gemma:2b', messages=[{'role': 'user', 'content': prompt}])
                 st.success(respuesta['message']['content'])
@@ -79,13 +97,13 @@ with col2:
     
     # Pines reales en las ciudades
     for idx, fila in datos.iterrows():
-        # Lógica de color: Rojo oscuro para 'MA', Naranja para 'A'
         color = "darkred" if fila['Nivel_Riesgo'] == 'MA' else "orange"
         folium.Marker(
             [fila['Latitud'], fila['Longitud']],
-            popup=f"{fila['Distrito']} - Riesgo: {fila['Nivel_Riesgo']} | Población: {fila['Poblacion_Expuesta']} | Colegios: {fila['Colegios_Riesgo']}",
+            popup=f"{fila['Distrito']} - Riesgo: {fila['Nivel_Riesgo']}",
             tooltip=fila['Distrito'],
             icon=folium.Icon(color=color, icon="info-sign")
         ).add_to(mapa)
     
-    st_folium(mapa, width=500, height=450)
+    # Altura del mapa aumentada un poco para cuadrar con el nuevo panel
+    st_folium(mapa, width=500, height=550)
